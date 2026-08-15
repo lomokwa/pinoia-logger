@@ -17,7 +17,14 @@ services:
     volumes:
       - ./promtail/promtail-config.yml:/etc/promtail/config.yml:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro # discovers + tails container logs; read-only, no write access needed
-      - /var/lib/docker/containers:/var/lib/docker/containers:ro # actual container log files promtail reads from
+      # Must be mounted at the SAME absolute path inside the container as on
+      # the host: Promtail reads each container's log file using the literal
+      # host path Docker reports (LogPath), it doesn't translate paths. Most
+      # installs use /var/lib/docker; snap-installed Docker (common on
+      # Ubuntu) uses /var/snap/docker/common/var-lib-docker instead — check
+      # with `docker info --format '{{.DockerRootDir}}'` on the host and set
+      # DOCKER_DATA_ROOT in .env accordingly if it's not the default.
+      - ${DOCKER_DATA_ROOT:-/var/lib/docker}/containers:${DOCKER_DATA_ROOT:-/var/lib/docker}/containers:ro
     command: -config.file=/etc/promtail/config.yml
     depends_on:
       - loki
@@ -36,8 +43,32 @@ services:
       # regardless, but set something reasonable as the initial value).
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
       # Loki datasource is auto-provisioned (see grafana/provisioning/), no manual "Add datasource" step needed.
+      # Multi-user hardening: only the admin can create accounts (Administration
+      # > Users > New user) — no public self-signup, no letting a logged-in
+      # user spin up their own org.
+      GF_USERS_ALLOW_SIGN_UP: 'false'
+      GF_USERS_ALLOW_ORG_CREATE: 'false'
+      # Correct absolute URL generation for redirects/links once this sits
+      # behind the Cloudflare Tunnel hostname instead of localhost:3000.
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://localhost:3000}
     depends_on:
       - loki
+
+  # Exposes Grafana at a public hostname via Cloudflare Tunnel, without
+  # opening any inbound port on the homelab. This is a tunnel dedicated to
+  # this stack (separate from the SSH-over-cloudflared-access setup used by
+  # selton-mello-bot/mc-manager's deploy workflows) — create it once in the
+  # Cloudflare Zero Trust dashboard (Networks > Tunnels), point its public
+  # hostname to service http://grafana:3000, and paste the tunnel token below.
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflared
+    restart: unless-stopped
+    command: tunnel run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on:
+      - grafana
 
 volumes:
   loki-data:
