@@ -1,0 +1,44 @@
+services:
+  loki:
+    image: grafana/loki:3.3.2
+    container_name: loki
+    restart: unless-stopped
+    volumes:
+      - ./loki/loki-config.yml:/etc/loki/local-config.yaml:ro
+      - loki-data:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    ports:
+      - "3100:3100" # Loki API — only needed if you want to query it directly (Grafana talks to it over the Docker network)
+
+  promtail:
+    image: grafana/promtail:3.3.2
+    container_name: promtail
+    restart: unless-stopped
+    volumes:
+      - ./promtail/promtail-config.yml:/etc/promtail/config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro # discovers + tails container logs; read-only, no write access needed
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro # actual container log files promtail reads from
+    command: -config.file=/etc/promtail/config.yml
+    depends_on:
+      - loki
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    container_name: grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    environment:
+      # Change this after first login (Grafana forces a reset on first login
+      # regardless, but set something reasonable as the initial value).
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      # Loki datasource is auto-provisioned (see grafana/provisioning/), no manual "Add datasource" step needed.
+    depends_on:
+      - loki
+
+volumes:
+  loki-data:
+  grafana-data:

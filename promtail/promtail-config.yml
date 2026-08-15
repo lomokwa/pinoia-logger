@@ -1,0 +1,45 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+# Where Promtail remembers its read position per log file, so restarts don't
+# re-ship (or lose) history.
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  # Auto-discovers every running container via the Docker API and tails its
+  # stdout/stderr — this is how both selton-mello-bot and mc-manager's
+  # containers get picked up without listing them individually here.
+  - job_name: docker
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 5s
+    relabel_configs:
+      # Docker Compose stamps this label on every container it starts — use
+      # it as the Loki "job" label so Grafana's job picker maps 1:1 to
+      # "which app/service is this" (e.g. selton-mello-bot, mc-manager,
+      # minecraft), instead of a random container ID or name.
+      - source_labels: [__meta_docker_container_label_com_docker_compose_service]
+        target_label: job
+      # Compose project name (folder name, or `name:` in compose.yml) — lets
+      # you filter/group by "which repo/stack" if job names ever collide
+      # across projects.
+      - source_labels: [__meta_docker_container_label_com_docker_compose_project]
+        target_label: compose_project
+      - source_labels: [__meta_docker_container_name]
+        target_label: container
+      # Drop containers with no compose service label (e.g. this stack's own
+      # loki/promtail/grafana containers, or one-off `docker run` containers)
+      # so we don't ingest our own logging stack's logs as "unlabeled" noise.
+      - source_labels: [__meta_docker_container_label_com_docker_compose_service]
+        regex: '^$'
+        action: drop
+    pipeline_stages:
+      # Container logs are Docker's json-file wrapper: {"log": "...", "stream": "stdout", "time": "..."}.
+      # Unwrap it so what lands in Loki is the app's actual log line, and pull
+      # "stream" out as a label to separate stdout from stderr if needed.
+      - docker: {}
