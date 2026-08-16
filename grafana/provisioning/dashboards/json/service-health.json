@@ -1,0 +1,99 @@
+{
+  "title": "Service Health",
+  "uid": "service-health",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "job",
+        "type": "query",
+        "datasource": { "type": "loki", "uid": "Loki" },
+        "query": "label_values(job)",
+        "refresh": 2,
+        "multi": true,
+        "includeAll": true,
+        "current": { "text": "All", "value": "$__all" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Recent activity (last 15m)",
+      "description": "Red means a service that should be logging has gone quiet — worth checking `docker compose ps`/logs directly. Some services (e.g. an idle Minecraft server writing to its own log file instead of stdout) are expected to show 0 here; treat this as a hint, not an alarm on its own.",
+      "type": "stat",
+      "datasource": { "type": "loki", "uid": "Loki" },
+      "gridPos": { "h": 5, "w": 24, "x": 0, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        {
+          "expr": "sum by (job) (count_over_time({job=~\"$job\"}[15m]))",
+          "legendFormat": "{{job}}",
+          "instant": true
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Log volume by level",
+      "description": "Split by Loki's auto-detected log level (`detected_level`) — a sudden shift in the warn/error share is often a better early signal than raw volume alone.",
+      "type": "timeseries",
+      "datasource": { "type": "loki", "uid": "Loki" },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 5 },
+      "fieldConfig": {
+        "defaults": { "custom": { "drawStyle": "bars", "stacking": { "mode": "normal" }, "fillOpacity": 60 } },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "sum by (detected_level) (count_over_time({job=~\"$job\"}[1m]))",
+          "legendFormat": "{{detected_level}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Log level breakdown (selected range)",
+      "type": "piechart",
+      "datasource": { "type": "loki", "uid": "Loki" },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 13 },
+      "targets": [
+        {
+          "expr": "sum by (detected_level) (count_over_time({job=~\"$job\"}[$__range]))",
+          "legendFormat": "{{detected_level}}",
+          "instant": true
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Lines per service (selected range)",
+      "type": "piechart",
+      "datasource": { "type": "loki", "uid": "Loki" },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 13 },
+      "targets": [
+        {
+          "expr": "sum by (job) (count_over_time({job=~\"$job\"}[$__range]))",
+          "legendFormat": "{{job}}",
+          "instant": true
+        }
+      ]
+    }
+  ]
+}
