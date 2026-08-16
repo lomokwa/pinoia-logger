@@ -1,0 +1,88 @@
+{
+  "title": "Errors Overview",
+  "uid": "errors-overview",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "job",
+        "type": "query",
+        "datasource": { "type": "loki", "uid": "Loki" },
+        "query": "label_values(job)",
+        "refresh": 2,
+        "multi": true,
+        "includeAll": true,
+        "current": { "text": "All", "value": "$__all" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Error rate by service",
+      "description": "Uses Loki's automatic log level detection (the `detected_level` label) rather than a raw text match, so it also catches structured/JSON logs, not just lines containing the literal word \"error\".",
+      "type": "timeseries",
+      "datasource": { "type": "loki", "uid": "Loki" },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 0 },
+      "fieldConfig": {
+        "defaults": { "custom": { "drawStyle": "bars", "fillOpacity": 40 } },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "sum by (job) (count_over_time({job=~\"$job\"} | detected_level=\"error\" [1m]))",
+          "legendFormat": "{{job}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Errors in the last 5m (by service)",
+      "description": "Quick at-a-glance count — a non-zero value here for a service that's usually quiet is worth investigating.",
+      "type": "stat",
+      "datasource": { "type": "loki", "uid": "Loki" },
+      "gridPos": { "h": 4, "w": 24, "x": 0, "y": 8 },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        {
+          "expr": "sum by (job) (count_over_time({job=~\"$job\"} | detected_level=\"error\" [5m]))",
+          "legendFormat": "{{job}}",
+          "instant": true
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Error logs",
+      "type": "logs",
+      "datasource": { "type": "loki", "uid": "Loki" },
+      "gridPos": { "h": 14, "w": 24, "x": 0, "y": 12 },
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending"
+      },
+      "targets": [
+        {
+          "expr": "{job=~\"$job\"} | detected_level=\"error\""
+        }
+      ]
+    }
+  ]
+}
